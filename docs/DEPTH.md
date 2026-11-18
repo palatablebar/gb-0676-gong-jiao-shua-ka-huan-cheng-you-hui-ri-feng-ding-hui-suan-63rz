@@ -13,6 +13,7 @@
 | M5 优惠回算 | 查看并运行优惠回算 | `/api/discounts` | `app/modules/m5_discounts/rules.py` | `tests/test_m5.py` |
 | M6 清分对账 | 查看并运行清分对账 | `/api/clearing` | `app/modules/m6_clearing/rules.py` | `tests/test_m6.py` |
 | M7 日结归档 | 查看并运行日结归档 | `/api/settlement` | `app/modules/m7_settlement/rules.py` | `tests/test_m7.py` |
+| 日结单 | 并入来源文件、查看缺口、对平后封存 | `/api/days` | `app/daybook.py` | `tests/test_daybook.py` |
 
 ## 陷阱登记
 
@@ -31,11 +32,17 @@
 | TRAP-11 | 混合偏移 | 落错版本 | UTC归整 | `app/values.py` | `tests/test_m3.py::test_timezone_equal` |
 | TRAP-23 | 换乘截止点 | 重复优惠 | 截止点排除 | `app/modules/m5_discounts/rules.py` | `tests/test_m5.py::test_exact_window_excluded` |
 | TRAP-25 | 票价重叠 | 随意取版 | 冲突隔离 | `app/modules/m3_fares/rules.py` | `tests/test_m3.py::test_overlap_rejected` |
+| TRAP-31 | 带缺口却显示完整归档 | 封存状态与数据缺口脱节 | 有隔离行即暂定，ready=False | `app/modules/m7_settlement/rules.py` | `tests/test_m7.py::test_real_sample_archive_stays_provisional` |
+| TRAP-32 | 同一文件重试 | 生成第二份日结 | 内容摘要去重，直接返回当前日结 | `app/daybook.py` | `tests/test_daybook.py::test_same_file_retry_never_creates_second_settlement` |
+| TRAP-33 | 跨文件同键 | 首件永远赢，补件无法纠错 | 文件内先见为准，跨文件后到补件为准，被取代行留痕 | `app/daybook.py` | `tests/test_daybook.py::test_cross_file_duplicate_and_supersede_are_itemized` |
+| TRAP-34 | 未对平即封存 | 暂定被误当完整 | 行数守恒且无未决缺口才允许封存，否则409 | `app/daybook.py` | `tests/test_daybook.py::test_seal_blocked_until_reconciled` |
 
 ## 对账规则
 
 输入原始逻辑行=最终采纳来源行+隔离来源行+重复行+空白行+分段表头。派生记录用_sources保存完整来源，因此分组不丢行。业务预期合计与上游申报合计之差等于逐行差异之和。结果按输入摘要、规则版本及参数产生唯一批次，事务写入；同源重跑只复用已有批次。
 
+日结单按业务日聚合多个来源文件：每个文件先独立采信，再按到达顺序合并，跨文件同键以后到补件为准，被取代行计入排除行（输入行=采信+隔离+重复+空白+分段表头+被取代）。合并身份为来源文件摘要序列，同序列产生同一批次。每一来源行在日结台账中恰有一个去向：采信、隔离（缺口待补/已补/终态）、重复、空行、分段表头、被取代；失败刷卡与无业务键行为终态排除，不阻塞封存。台账行数与输入行数不一致时拒绝生成日结。
+
 ## 已知不覆盖
 
-4MB以上文件需预先按业务键分批；不模拟生产支付与外部回调。人工复核只变更批次状态，不改写原始记录。
+4MB以上文件需预先按业务键分批；不模拟生产支付与外部回调。人工复核只变更批次状态，不改写原始记录。日结单按上传顺序合并，不提供补件回滚；封存后如需变更须另开新日结。

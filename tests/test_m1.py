@@ -29,3 +29,12 @@ def test_intake_conservation_real_sample(sample):
 def test_quoted_newline_is_one_record(sample):
     "TRAP-03"
     r=evaluate(sample);assert any("\n" in str(x) for row in r["rows"] for x in row.values())
+def test_ledger_covers_every_input_line(sample):
+    "每个来源行恰好一个去向，采信与未采信逐行可查"
+    from collections import Counter
+    r=evaluate(sample);m=r["metrics"]
+    assert len(r["ledger"])==m["input"]
+    c=Counter(e["disposition"] for e in r["ledger"])
+    assert c["accepted"]==m["accepted"] and c["quarantine"]==m["quarantine"]
+    assert c["duplicate"]==m["duplicate"] and c["blank"]==m["blank"] and c["repeated_header"]==m["repeated_headers"]
+    assert all(e["reason"] for e in r["ledger"] if e["disposition"]=="quarantine")

@@ -13,24 +13,35 @@ def evaluate(raw,context=None):
     if not text.strip(): raise DomainError("BLANK_ONLY","全部为空行")
     stream=csv.reader(io.StringIO(text,newline=""));header=next(stream,None)
     if header!=COLUMNS: raise DomainError("BAD_HEADER","表头不匹配")
-    rows=[];bad=[];seen={};duplicate=blank=repeated=count=0
+    rows=[];bad=[];seen={};ledger=[];duplicate=blank=repeated=count=0
     try:
         for cells in stream:
             count+=1;line=stream.line_num
-            if not cells or not any(c.strip() for c in cells): blank+=1;continue
-            if cells==header: repeated+=1;continue
+            if not cells or not any(c.strip() for c in cells):
+                blank+=1;ledger.append({"seq":count,"line":line,"disposition":"blank","key":None});continue
+            if cells==header:
+                repeated+=1;ledger.append({"seq":count,"line":line,"disposition":"repeated_header","key":None});continue
             row={"_line":line,"_sources":[line],"_raw":cells}
-            if len(cells)!=len(header): bad.append(reject(row,"BAD_COLUMNS","列数不匹配"));continue
+            if len(cells)!=len(header):
+                bad.append(reject(row,"BAD_COLUMNS","列数不匹配"))
+                key=cells[0].strip() if cells else None
+                ledger.append({"seq":count,"line":line,"disposition":"quarantine","key":key or None,"reason":"BAD_COLUMNS","detail":"列数不匹配"});continue
             row.update(dict(zip(header,[x.strip() for x in cells])))
-            if not row[header[0]]: bad.append(reject(row,"EMPTY_VALUE","业务键为空"));continue
+            if not row[header[0]]:
+                bad.append(reject(row,"EMPTY_VALUE","业务键为空"))
+                ledger.append({"seq":count,"line":line,"disposition":"quarantine","key":None,"reason":"EMPTY_VALUE","detail":"业务键为空"});continue
             key=row[header[0]]
             if key in seen:
                 previous=seen[key]
-                if cells==previous["_raw"]: duplicate+=1
-                else: bad.append(reject(row,"DUPLICATE_CONFLICT","同键不同值"))
+                if cells==previous["_raw"]:
+                    duplicate+=1;ledger.append({"seq":count,"line":line,"disposition":"duplicate","key":key,"of":previous["_line"]})
+                else:
+                    bad.append(reject(row,"DUPLICATE_CONFLICT","同键不同值"))
+                    ledger.append({"seq":count,"line":line,"disposition":"quarantine","key":key,"reason":"DUPLICATE_CONFLICT","detail":"同键不同值"})
                 continue
             seen[key]=row;rows.append(row)
+            ledger.append({"seq":count,"line":line,"disposition":"accepted","key":key})
     except csv.Error: raise DomainError("BAD_CSV","引号未闭合或文件损坏")
     if count==0: raise DomainError("HEADER_ONLY","仅有表头")
     if not rows and not bad: raise DomainError("BLANK_ONLY","全部为空行")
-    return {"rows":rows,"quarantine":bad,"metrics":{"input":count,"accepted":len(rows),"quarantine":len(bad),"duplicate":duplicate,"blank":blank,"repeated_headers":repeated,"encoding":encoding}}
+    return {"rows":rows,"quarantine":bad,"ledger":ledger,"metrics":{"input":count,"accepted":len(rows),"quarantine":len(bad),"duplicate":duplicate,"blank":blank,"repeated_headers":repeated,"encoding":encoding}}

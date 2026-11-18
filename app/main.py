@@ -45,6 +45,38 @@ def create_app():
         from app.archive import build_archive
         run=store.get(run_id)
         return application.response_class(build_archive(run),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="evidence.csv"'})
+    @application.get("/api/days")
+    def days(): return {"days":store.list_days()}
+    @application.get("/api/days/<day>")
+    def day_detail(day):
+        found=store.get_day(day)
+        if not found: raise DomainError("NOT_FOUND","日结不存在",404)
+        return found
+    @application.post("/api/days/<day>/files")
+    def day_add_file(day):
+        from app import daybook
+        file=request.files.get("file")
+        if file is not None:
+            raw,name=file.read(),file.filename or "upload.csv"
+        else:
+            payload=request.get_json(silent=True)
+            if not isinstance(payload,dict): raise DomainError("BAD_BODY","请求需要对象")
+            text=payload.get("csv")
+            if not isinstance(text,str): raise DomainError("BAD_CSV","CSV需要文本")
+            raw,name=text.encode(),payload.get("name") or "upload.csv"
+        return daybook.add_file(day,name,raw)
+    @application.post("/api/days/<day>/seal")
+    def day_seal(day):
+        from app import daybook
+        p=request.get_json(silent=True) or {}
+        if not isinstance(p.get("version"),int): raise DomainError("BAD_VERSION","请提供版本号")
+        return daybook.seal(day,p["version"])
+    @application.get("/api/days/<day>/archive")
+    def day_archive(day):
+        from app.archive import build_day_archive
+        found=store.get_day(day)
+        if not found: raise DomainError("NOT_FOUND","日结不存在",404)
+        return application.response_class(build_day_archive(found),mimetype="text/csv",headers={"Content-Disposition":'attachment; filename="settlement.csv"'})
     for index,(slug,title) in enumerate(MODULES,1):
         module=importlib.import_module(f"app.modules.m{index}_{slug}.handler")
         application.register_blueprint(module.bp)

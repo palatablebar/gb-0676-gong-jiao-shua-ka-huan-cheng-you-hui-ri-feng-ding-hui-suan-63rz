@@ -8,5 +8,6 @@ def evaluate(rows,context):
     if balances and not all(balances): raise DomainError("UNBALANCED","来源行未对平，不能归档")
     ids=[str(r.get("event_id",r.get("_line",""))) for r in rows]
     if len(ids)!=len(set(ids)): raise DomainError("ARCHIVE_DUPLICATE","归档业务键重复")
+    gaps=len(context.get("quarantine",[]))
     encoded=json.dumps(rows,ensure_ascii=False,sort_keys=True,default=str).encode()
-    return {"rows":rows,"quarantine":[],"metrics":{"records":len(rows),"source_lines":len(set(x for row in rows for x in sources(row))),"sha256":hashlib.sha256(encoded).hexdigest(),"ready":True,"differences":sum(r.get("status")=="差异" for r in rows)}}
+    return {"rows":rows,"quarantine":[],"metrics":{"records":len(rows),"source_lines":len(set(x for row in rows for x in sources(row))),"sha256":hashlib.sha256(encoded).hexdigest(),"ready":gaps==0,"gaps":gaps,"differences":sum(r.get("status")=="差异" for r in rows)}}

@@ -1,7 +1,12 @@
 from app.modules.m7_settlement.rules import evaluate
+from app.pipeline import calculate,load_sample
 from app.errors import DomainError
 import pytest
-def test_real_sample_archive_ready(result): assert result["stages"][6]["metrics"]["ready"] is True
+def test_real_sample_archive_stays_provisional(result):
+    "带隔离缺口的批次不得显示为可封存的完整归档"
+    m=result["stages"][6]["metrics"];assert m["ready"] is False and m["gaps"]==result["stages"][5]["metrics"]["quarantine_inputs"]>0
+def test_clean_sample_archive_ready():
+    m=calculate(load_sample("clean.csv"))["stages"][6]["metrics"];assert m["ready"] is True and m["gaps"]==0
 def test_real_sample_archive_source_count(result): assert result["stages"][6]["metrics"]["source_lines"]==result["stages"][5]["metrics"]["accepted_inputs"]
 def test_real_sample_seal_stable(result):
     rows=result["stages"][5]["rows"];assert evaluate(rows,{})["metrics"]["sha256"]==evaluate(rows,{})["metrics"]["sha256"]
